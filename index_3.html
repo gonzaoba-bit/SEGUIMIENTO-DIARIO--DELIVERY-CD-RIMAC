@@ -1130,14 +1130,17 @@ window.DEFAULT_DATA = {"meta":{"fuente":"Datos de ejemplo · SIC MR2026 - Seguim
   function computeModulacion(records, labelFor) {
     var byEmp = {}, byRuta = {}, clientes = [];
     records.forEach(function (rec) {
-      if (!rec.rechazoFlag) return;
+      // Usa modRechazoFlag/modParcial (cruce Hoja de Ruta + routes-data),
+      // no rechazoFlag/parcial (que son solo Hoja de Ruta, para MR
+      // contactos/volumen) — ver nota en buildRecords.
+      if (!rec.modRechazoFlag) return;
       if (!byEmp[rec.empresa]) byEmp[rec.empresa] = { rechazados: 0, alertados: 0 };
       byEmp[rec.empresa].rechazados++;
       if (rec.alertado) byEmp[rec.empresa].alertados++;
       if (!byRuta[rec.ruta]) byRuta[rec.ruta] = { ruta: rec.ruta, empresa: rec.empresa, rechazados: 0, noAlertados: 0 };
       byRuta[rec.ruta].rechazados++;
       if (!rec.alertado) byRuta[rec.ruta].noAlertados++;
-      clientes.push({ codigo: rec.codigo, cliente: rec.cliente, ruta: rec.ruta, empresa: rec.empresa, parcial: rec.parcial, alertado: rec.alertado });
+      clientes.push({ codigo: rec.codigo, cliente: rec.cliente, ruta: rec.ruta, empresa: rec.empresa, parcial: rec.modParcial, alertado: rec.alertado });
     });
     var empresas = Object.keys(byEmp).map(function (id) {
       var e = byEmp[id];
@@ -2215,6 +2218,18 @@ window.DEFAULT_DATA = {"meta":{"fuente":"Datos de ejemplo · SIC MR2026 - Seguim
       // sin nada facturado).
       var hasHlFact = row.hl_fact !== undefined && String(row.hl_fact).trim() !== "";
       var rejectedHl = hojaRechazo ? (hasHlFact ? Math.max(0, hlProg - num(row.hl_fact)) : hlProg) : 0;
+      // La pestaña "Modulación de pedidos" usa su PROPIO cálculo de rechazo,
+      // distinto de rechazoFlag de arriba (que es solo Hoja de Ruta, para MR
+      // contactos/volumen). Acá SÍ se cruzan ambos archivos: cuando
+      // routes-data marca PARTIAL_DELIVERY, ese código de cliente fue
+      // atendido de manera parcial, así que también debe entrar al cálculo
+      // y cruzarse contra el motivo de alerta de la Hoja de Ruta — igual que
+      // cualquier cliente con volumen rechazado confirmado por routes-data
+      // (total_refused_vol > 0). El cruce se hace para TODOS los clientes,
+      // para sincerar de verdad lo que no está alertado.
+      var modRejected = refused > 0;
+      var modRechazoFlag = modRejected || hojaRechazo || status === "PARTIAL_DELIVERY";
+      var modParcial = (num(row.ped_rech_parcial) > 0) || status === "PARTIAL_DELIVERY" || (delivered > 0 && refused > 0);
       // "Modulación": was this rejection actually — and CORRECTLY — alerted?
       // Every client that ends up flagged as a rejection (rechazoFlag, from
       // either file) must have an alert to be considered compliant. A client
@@ -2234,6 +2249,7 @@ window.DEFAULT_DATA = {"meta":{"fuente":"Datos de ejemplo · SIC MR2026 - Seguim
         ruta: ruta, vehiculo: vehiculo, empresa: empresa, codigo: codigo, cliente: cliente, viaje: viaje,
         hlProgramado: hlProg, delivered: delivered, refused: refused, visited: visited,
         rejected: rejected, rechazoFlag: rechazoFlag, rejectedHl: rejectedHl, parcial: parcial,
+        modRechazoFlag: modRechazoFlag, modParcial: modParcial,
         matched: !!csv, alertado: alertado,
         motivo: motivoRaw || "Rechazo registrado",
       };
